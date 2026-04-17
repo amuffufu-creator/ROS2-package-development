@@ -1,0 +1,55 @@
+# ═══════════════════════════════════════════════════════════════
+# colcon build artifacts — regenerated on every build
+# ═══════════════════════════════════════════════════════════════
+build/
+install/
+log/
+
+# ═══════════════════════════════════════════════════════════════
+# Python bytecode cache
+# ═══════════════════════════════════════════════════════════════
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# ═══════════════════════════════════════════════════════════════
+# Editor / IDE personal settings
+# build.code-workspace and ros2_ws.code-workspace encode personal
+# VS Code layout preferences — not worth committing
+# ═══════════════════════════════════════════════════════════════
+.vscode/
+.idea/
+*.code-workspace
+*.swp
+*~
+.DS_Store
+
+# ═══════════════════════════════════════════════════════════════
+# Scratch files that accumulated during development
+# ═══════════════════════════════════════════════════════════════
+folder_tree.txt
+frames_*.gv
+frames_*.pdf
+run.csv
+
+# ═══════════════════════════════════════════════════════════════
+# C++ build output (for task 4.5 later)
+# ═══════════════════════════════════════════════════════════════
+*.o
+*.so
+*.a
+
+# ═══════════════════════════════════════════════════════════════
+# ROS 2 bag recordings — too large for Git
+# ═══════════════════════════════════════════════════════════════
+*.db3
+*.mcap
+rosbag2_*/
+
+# ═══════════════════════════════════════════════════════════════
+# Secrets — none yet, but future-proofing
+# ═══════════════════════════════════════════════════════════════
+*.env
+secrets.yaml
+credentials.json

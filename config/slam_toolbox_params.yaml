@@ -1,0 +1,75 @@
+# slam_toolbox_params.yaml
+# Config for small differential-drive AGV with encoder odom + RPLIDAR A1/A2/A3
+
+slam_toolbox:
+  ros__parameters:
+
+    # ── Solver ──
+    solver_plugin: solver_plugins::CeresSolver
+    ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
+    ceres_preconditioner: SCHUR_JACOBI
+    ceres_trust_strategy: LEVENBERG_MARQUARDT
+    ceres_dogleg_type: TRADITIONAL_DOGLEG
+    ceres_loss_function: None
+
+    # ── Frame IDs (must match your TF tree) ──
+    odom_frame: odom
+    map_frame: map
+    base_frame: base_link
+    scan_topic: /scan
+    use_scan_matching: true
+    use_scan_barycenter: true
+
+    # ── Mode ──
+    mode: mapping    # 'mapping' for SLAM, 'localization' for nav with existing map
+
+    # ── Map update ──
+    map_update_interval: 3.0          # seconds between map publishes
+    resolution: 0.05                   # 5 cm grid cells
+    max_laser_range: 12.0              # RPLIDAR A1 max ~12m, A2 ~18m — adjust if A2/A3
+    minimum_time_interval: 0.5         # min time between scan insertions
+    minimum_travel_distance: 0.1       # min travel (m) before new scan inserted
+    minimum_travel_heading: 0.15       # min rotation (rad, ~8.6°) before new scan inserted
+
+    # ── Scan matching tuning ──
+    scan_buffer_size: 10
+    scan_buffer_maximum_scan_distance: 10.0
+    link_match_minimum_response_fine: 0.1
+    link_scan_maximum_distance: 1.5
+    loop_search_maximum_distance: 3.0
+    do_loop_closing: true
+    loop_match_minimum_chain_size: 10
+    loop_match_maximum_variance_coarse: 3.0
+    loop_match_minimum_response_coarse: 0.35
+    loop_match_minimum_response_fine: 0.45
+
+    # ── Correlation search (fine matching) ──
+    correlation_search_space_dimension: 0.5
+    correlation_search_space_resolution: 0.01
+    correlation_search_space_smear_deviation: 0.1
+
+    # ── Loop closure search ──
+    loop_search_space_dimension: 8.0
+    loop_search_space_resolution: 0.05
+    loop_search_space_smear_deviation: 0.03
+
+    # ── Distance / Variance penalties ──
+    distance_variance_penalty: 0.5
+    angle_variance_penalty: 1.0
+    fine_search_angle_offset: 0.00349   # ~0.2°
+    coarse_search_angle_offset: 0.349   # ~20°
+    coarse_angle_resolution: 0.0349     # ~2°
+
+    # ── Transform ──
+    transform_publish_period: 0.02      # 50 Hz TF map→odom
+    transform_timeout: 1.0
+    tf_buffer_duration: 30.0
+
+    # ── Misc ──
+    use_response_expansion: true
+    debug_logging: false
+    throttle_scans: 1                   # process every scan
+    enable_interactive_mode: true       # allow RViz plugin interaction
+
+    # ── Stack size (needed for larger maps) ──
+    stack_size_to_use: 40000000         # 40 MB
