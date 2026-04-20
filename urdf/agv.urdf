@@ -1,30 +1,41 @@
 <?xml version="1.0"?>
 <robot name="agv_3wheel">
 
+  <!-- Virtual frame on the ground directly below the robot. -->
+  <!-- Required by Nav2 as the 2D projection of the robot footprint. -->
   <link name="base_footprint"/>
 
-  <link name="base_link"/>
+  <!-- Main rigid body of the robot. Visual geometry attaches here. -->
+  <!-- The fix: <link> now opens normally (no /> at the end), -->
+  <!-- so <visual> is correctly nested inside it. -->
+  <link name="base_link">
     <visual>
       <origin xyz="0 0 0.05" rpy="0 0 0"/>
       <geometry>
+        <!-- 33cm x 26cm x 10cm chassis box, just for RViz display -->
         <box size="0.33 0.26 0.10"/>
       </geometry>
     </visual>
-</link>
+  </link>
 
+  <!-- base_footprint -> base_link offset: chassis center is 6.36cm above ground -->
   <joint name="base_joint" type="fixed">
     <parent link="base_footprint"/>
     <child link="base_link"/>
     <origin xyz="0 0 0.0636" rpy="0 0 0"/>
   </joint>
 
-  <link name="laser_frame"/>
+  <!-- LiDAR frame. Matches the child-frame-id="laser" in the static TF -->
+  <!-- publisher inside slam_bringup.launch.py and nav2_bringup.launch.py. -->
+  <link name="laser"/>
   <joint name="lidar_joint" type="fixed">
     <parent link="base_link"/>
-    <child link="laser_frame"/>
+    <child link="laser"/>
     <origin xyz="0.23 -0.01 0.22" rpy="0 0 0"/>
   </joint>
 
+  <!-- Reserved IMU frame. Not currently published to, but declared here -->
+  <!-- so that when an IMU is added later, the TF tree is already correct. -->
   <link name="imu_link"/>
   <joint name="imu_joint" type="fixed">
     <parent link="base_link"/>
