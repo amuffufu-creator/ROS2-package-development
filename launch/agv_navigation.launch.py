@@ -69,7 +69,7 @@ def generate_launch_description():
     base_to_laser_tf = Node(
         package='tf2_ros', executable='static_transform_publisher',
         name='base_to_laser_tf',
-        arguments=['--x', '0.21', '--y', '0.0', '--z', '0.2162',
+        arguments=['--x', '0.085', '--y', '-0.01', '--z', '0.175',
                    '--roll', '0', '--pitch', '0', '--yaw', '0',
                    '--frame-id', 'base_link', '--child-frame-id', 'laser']
     )
