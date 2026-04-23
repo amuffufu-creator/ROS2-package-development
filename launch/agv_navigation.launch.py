@@ -32,7 +32,7 @@ def generate_launch_description():
 
     # ───────── Arguments ─────────
     esp32_ip_arg = DeclareLaunchArgument(
-        'esp32_ip', default_value='192.168.100.25') # ESP32 ip
+        'esp32_ip', default_value='192.168.4.1') # ESP32 ip
     map_arg = DeclareLaunchArgument(
         'map', default_value=os.path.expanduser('~/ros2_ws/maps/my_map.yaml'))
 

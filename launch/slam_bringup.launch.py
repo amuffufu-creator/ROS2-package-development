@@ -29,7 +29,7 @@ def generate_launch_description():
 
     # ───────── Launch arguments ─────────
     esp32_ip_arg = DeclareLaunchArgument(
-        'esp32_ip', default_value='192.168.100.25',
+        'esp32_ip', default_value='192.168.4.1',
         description='ESP32 IP address on WiFi'
     )
     esp32_ip = LaunchConfiguration('esp32_ip')

@@ -1,4 +1,3 @@
-
 import os
 from glob import glob
 from setuptools import find_packages, setup
@@ -16,6 +15,10 @@ setup(
         (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
         (os.path.join('share', package_name, 'urdf'), glob('urdf/*.urdf')),
         (os.path.join('share', package_name, 'config'), glob('config/*')),
+        # ── NEW: robot description (xacro files for simulation) ──
+        (os.path.join('share', package_name, 'description'), glob('description/*')),
+        # ── NEW: Gazebo world files (uncomment in Phase 3) ──────
+        # (os.path.join('share', package_name, 'worlds'), glob('worlds/*')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,

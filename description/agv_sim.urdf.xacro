@@ -1,0 +1,493 @@
+<?xml version="1.0"?>
+<!--
+  agv_sim.urdf.xacro
+  ==================
+  Simulation-ready description for the 3-wheel differential-drive AGV.
+  Targets Gazebo Harmonic on ROS 2 Jazzy.
+
+  Geometry is derived from the real-robot configuration:
+    wheel_base   = 0.285 m   (distance between the two driven wheels)
+    wheel_radius = 0.0319 m  (from the ESP32 firmware)
+    laser_pose   = (0.21, 0.0, 0.2162)  (from nav2 launch files)
+
+  The resulting robot publishes:
+    /odom         (from the diff_drive plugin)
+    /scan         (from the gpu_lidar sensor plugin)
+    /joint_states (from the joint_state_publisher plugin)
+    /tf           (via Gazebo's internal TF, bridged to ROS)
+  and subscribes to:
+    /cmd_vel      (consumed by the diff_drive plugin)
+-->
+<robot name="agv_3wheel" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ============================================================
+       PROPERTIES — central source of truth for all geometry/mass.
+       Change a value here and it updates everywhere it's used.
+       ============================================================ -->
+
+  <!-- Chassis (the main body of the robot) -->
+  <xacro:property name="chassis_length" value="0.33"/>    <!-- X dimension -->
+  <xacro:property name="chassis_width"  value="0.26"/>    <!-- Y dimension -->
+  <xacro:property name="chassis_height" value="0.10"/>    <!-- Z dimension -->
+  <xacro:property name="chassis_mass"   value="3.0"/>     <!-- kilograms -->
+
+  <!-- Driven wheels -->
+  <xacro:property name="wheel_radius"   value="0.0319"/>  <!-- matches ESP32 firmware -->
+  <xacro:property name="wheel_width"    value="0.025"/>   <!-- thickness of the tire -->
+  <xacro:property name="wheel_mass"     value="0.10"/>    <!-- kilograms per wheel -->
+  <xacro:property name="wheel_base"     value="0.285"/>   <!-- distance between wheels -->
+  <xacro:property name="wheel_offset_x" value="0.0"/>     <!-- wheels mounted at chassis center (in X) -->
+
+  <!-- Caster (the passive support wheel at the back) -->
+  <xacro:property name="caster_radius"  value="0.015"/>
+  <xacro:property name="caster_mass"    value="0.05"/>
+  <xacro:property name="caster_offset_x" value="-0.12"/>  <!-- toward the rear -->
+
+  <!-- Ground clearance: how high base_link sits above the ground.
+       This must be chosen so that the wheels touch the floor and the
+       chassis doesn't drag. With wheel_radius = 0.0319, the wheel center
+       is 0.0319 m above the ground. We mount base_link at that same
+       height so the wheels stick out below the chassis. -->
+  <xacro:property name="base_link_height" value="${wheel_radius}"/>
+
+  <!-- Laser sensor pose on base_link. Matches the real robot's TF. -->
+  <xacro:property name="laser_x" value="0.21"/>
+  <xacro:property name="laser_y" value="0.0"/>
+  <xacro:property name="laser_z" value="0.2162"/>
+
+
+
+  <!-- ============================================================
+       INERTIA MACROS — precomputed moment-of-inertia tensors for
+       common shapes. These free you from calculating ixx/iyy/izz
+       by hand for every link.
+       ============================================================ -->
+
+  <!-- Box inertia: for a rectangular box of mass m and dimensions (x,y,z).
+       Formulas from standard rigid-body dynamics textbooks. -->
+  <xacro:macro name="box_inertia" params="m x y z">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="${m}"/>
+      <inertia
+        ixx="${(1.0/12.0) * m * (y*y + z*z)}"
+        ixy="0.0" ixz="0.0"
+        iyy="${(1.0/12.0) * m * (x*x + z*z)}"
+        iyz="0.0"
+        izz="${(1.0/12.0) * m * (x*x + y*y)}"/>
+    </inertial>
+  </xacro:macro>
+
+  <!-- Cylinder inertia: for a cylinder with its axis along Z by default.
+       We'll orient wheels via the joint rpy, not by rotating the cylinder. -->
+  <xacro:macro name="cylinder_inertia" params="m r h">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="${m}"/>
+      <inertia
+        ixx="${(1.0/12.0) * m * (3*r*r + h*h)}"
+        ixy="0.0" ixz="0.0"
+        iyy="${(1.0/12.0) * m * (3*r*r + h*h)}"
+        iyz="0.0"
+        izz="${(1.0/2.0)  * m * r*r}"/>
+    </inertial>
+  </xacro:macro>
+
+  <!-- Sphere inertia: for a uniform solid sphere. Used for the caster. -->
+  <xacro:macro name="sphere_inertia" params="m r">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="${m}"/>
+      <inertia
+        ixx="${(2.0/5.0) * m * r*r}"
+        ixy="0.0" ixz="0.0"
+        iyy="${(2.0/5.0) * m * r*r}"
+        iyz="0.0"
+        izz="${(2.0/5.0) * m * r*r}"/>
+    </inertial>
+  </xacro:macro>
+
+
+  <!-- ============================================================
+       LINK TREE — every physical piece of the robot.
+       Hierarchy:
+         base_footprint (ground-projection reference)
+           └── base_link (the chassis body)
+                 ├── wheel_left_link (driven, rotating)
+                 ├── wheel_right_link (driven, rotating)
+                 ├── caster_link (passive sphere)
+                 └── laser_frame (sensor mount)
+       ============================================================ -->
+
+  <!-- base_footprint: a conventional zero-height frame directly below
+       base_link on the ground. Nav2 and slam_toolbox often reference this
+       instead of base_link because it has no Z offset and sits on the floor.
+       It has no visual or inertial because it's a pure reference frame. -->
+  <link name="base_footprint"/>
+
+  <!-- base_link: the main chassis. This is where most plugins attach. -->
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 ${chassis_height/2}" rpy="0 0 0"/>
+      <geometry>
+        <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
+      </geometry>
+      <material name="chassis_color">
+        <color rgba="0.2 0.5 0.8 1.0"/>  <!-- blue-ish for visibility -->
+      </material>
+    </visual>
+
+    <collision>
+      <origin xyz="0 0 ${chassis_height/2}" rpy="0 0 0"/>
+      <geometry>
+        <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
+      </geometry>
+    </collision>
+
+    <!-- Inertia block using our macro. The box is the chassis dimensions. -->
+    <xacro:box_inertia m="${chassis_mass}"
+                       x="${chassis_length}"
+                       y="${chassis_width}"
+                       z="${chassis_height}"/>
+  </link>
+
+  <!-- Joint connecting base_footprint to base_link. A fixed joint because
+       the chassis doesn't move relative to its footprint — the footprint
+       is just a projection. The Z offset lifts base_link so the wheels
+       (which hang below) rest on the ground. -->
+  <joint name="base_footprint_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 ${base_link_height}" rpy="0 0 0"/>
+  </joint>
+
+
+  <!-- ============================================================
+       WHEEL MACRO — defines one driven wheel, parameterized so we
+       can call it twice for left and right.
+       Parameters:
+         side_name: "left" or "right" (used in link/joint names)
+         y_offset:  signed Y position (positive=left, negative=right)
+       ============================================================ -->
+
+  <xacro:macro name="driven_wheel" params="side_name y_offset">
+
+    <link name="wheel_${side_name}_link">
+      <visual>
+        <!-- Rotate the cylinder so its axis aligns with the Y axis of the
+             robot (the rotation axis of the wheel). Without this rpy, the
+             cylinder would stand upright like a drum. -->
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry>
+          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+        </geometry>
+        <material name="wheel_color">
+          <color rgba="0.1 0.1 0.1 1.0"/>  <!-- dark gray/black -->
+        </material>
+      </visual>
+
+      <collision>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry>
+          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+        </geometry>
+      </collision>
+
+      <!-- Cylinder inertia: r=wheel_radius, h=wheel_width. -->
+      <xacro:cylinder_inertia m="${wheel_mass}"
+                              r="${wheel_radius}"
+                              h="${wheel_width}"/>
+    </link>
+
+    <!-- Joint connecting base_link to this wheel.
+         Type "continuous" means it rotates freely with no angle limit —
+         exactly what you want for a drive wheel.
+         Axis (0, 1, 0) means the wheel rotates about the robot's Y axis,
+         which is perpendicular to the forward direction. -->
+    <joint name="wheel_${side_name}_joint" type="continuous">
+      <parent link="base_link"/>
+      <child link="wheel_${side_name}_link"/>
+      <origin xyz="${wheel_offset_x} ${y_offset} 0" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+    </joint>
+
+  </xacro:macro>
+
+  <!-- Instantiate the two wheels. Left is at +wheel_base/2 on the Y axis,
+       right is at -wheel_base/2. The diff_drive plugin below uses the
+       joint names to figure out which is which. -->
+  <xacro:driven_wheel side_name="left"  y_offset="${ wheel_base/2}"/>
+  <xacro:driven_wheel side_name="right" y_offset="${-wheel_base/2}"/>
+
+
+  <!-- ============================================================
+       CASTER — the passive back wheel that keeps the robot upright.
+       Modeled as a small sphere with very low friction (set via a
+       Gazebo block further down). No joint axis needed because it's
+       attached via a fixed joint; the sphere just slides.
+       ============================================================ -->
+
+  <link name="caster_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="${caster_radius}"/>
+      </geometry>
+      <material name="caster_color">
+        <color rgba="0.5 0.5 0.5 1.0"/>
+      </material>
+    </visual>
+
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="${caster_radius}"/>
+      </geometry>
+    </collision>
+
+    <xacro:sphere_inertia m="${caster_mass}" r="${caster_radius}"/>
+  </link>
+
+  <!-- The caster is mounted at the bottom of the chassis, offset rearward.
+       Its Z position is -base_link_height + caster_radius, meaning we go
+       down from base_link to the ground, then up by the caster's radius,
+       so the sphere touches the floor. -->
+  <joint name="caster_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="caster_link"/>
+    <origin xyz="${caster_offset_x} 0 ${-base_link_height + caster_radius}"
+            rpy="0 0 0"/>
+  </joint>
+
+  <!-- LASER MAST
+     A thin vertical cylinder connecting the top of the chassis to the
+     laser frame, so the robot doesn't look like it has a floating sensor.
+     Purely visual — it's declared as a fixed rigid attachment. -->
+<link name="laser_mast">
+  <visual>
+    <origin xyz="0 0 ${(laser_z - chassis_height)/2}" rpy="0 0 0"/>
+    <geometry>
+      <cylinder radius="0.012"
+                length="${laser_z - chassis_height}"/>
+    </geometry>
+    <material name="mast_color">
+      <color rgba="0.3 0.3 0.3 1.0"/>
+    </material>
+  </visual>
+
+  <collision>
+    <origin xyz="0 0 ${(laser_z - chassis_height)/2}" rpy="0 0 0"/>
+    <geometry>
+      <cylinder radius="0.012"
+                length="${laser_z - chassis_height}"/>
+    </geometry>
+  </collision>
+
+  <xacro:cylinder_inertia m="0.1" r="0.012"
+                          h="${laser_z - chassis_height}"/>
+</link>
+
+<joint name="laser_mast_joint" type="fixed">
+  <parent link="base_link"/>
+  <child link="laser_mast"/>
+  <origin xyz="${laser_x} ${laser_y} ${chassis_height}" rpy="0 0 0"/>
+</joint>
+  <!-- ============================================================
+       LASER FRAME — the mounting point for the 2D LiDAR sensor.
+       The sensor itself is declared in the Gazebo section below;
+       here we just provide the TF frame the sensor reports into.
+       Position matches the real robot's static transform.
+       ============================================================ -->
+  
+  <link name="laser_frame">
+    <!-- Give it a tiny visual cylinder so it shows up in RViz. This
+         is optional; for production you'd leave it empty or use a mesh. -->
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.035" length="0.04"/>
+      </geometry>
+      <material name="laser_color">
+        <color rgba="0.9 0.1 0.1 1.0"/>  <!-- red, like an RPLIDAR -->
+      </material>
+    </visual>
+
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.035" length="0.04"/>
+      </geometry>
+    </collision>
+
+    <!-- Tiny inertia — the laser doesn't need to be physically realistic,
+         but every link in a Gazebo robot must have inertia or the sim
+         will refuse to load it. -->
+    <xacro:cylinder_inertia m="0.05" r="0.035" h="0.04"/>
+  </link>
+
+  <joint name="laser_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="laser_frame"/>
+    <origin xyz="${laser_x} ${laser_y} ${laser_z}" rpy="0 0 0"/>
+  </joint>
+
+
+  <!-- ============================================================
+       GAZEBO PLUGINS — this is what brings the URDF to life in sim.
+       Three plugins total: diff_drive (replaces ESP32), joint_state
+       publisher (so RSP can compute wheel TF), and gpu_lidar (replaces
+       the RPLIDAR driver).
+       ============================================================ -->
+
+  <!-- Plugin block attached at the robot level, not to a specific link.
+       These systems run on every simulation step. -->
+  <gazebo>
+
+    <!-- DIFFERENTIAL DRIVE PLUGIN
+         Replaces the entire ESP32 + udp_bridge_node chain.
+         Takes Twist messages on /cmd_vel and spins wheel joints.
+         Publishes Odometry on /odom and broadcasts odom→base_link TF. -->
+    <plugin filename="gz-sim-diff-drive-system"
+            name="gz::sim::systems::DiffDrive">
+      <left_joint>wheel_left_joint</left_joint>
+      <right_joint>wheel_right_joint</right_joint>
+      <wheel_separation>${wheel_base}</wheel_separation>
+      <wheel_radius>${wheel_radius}</wheel_radius>
+
+      <!-- Velocity limits matching your nav2_params.yaml -->
+      <max_linear_velocity>0.20</max_linear_velocity>
+      <min_linear_velocity>-0.20</min_linear_velocity>
+      <max_angular_velocity>1.0</max_angular_velocity>
+      <min_angular_velocity>-1.0</min_angular_velocity>
+
+      <!-- Topic for velocity commands (ROS side after bridge) -->
+      <topic>cmd_vel</topic>
+
+      <!-- Odometry output configuration -->
+      <odom_topic>odom</odom_topic>
+      <odom_publish_frequency>50</odom_publish_frequency>
+      <frame_id>odom</frame_id>
+      <child_frame_id>base_link</child_frame_id>
+
+      <!-- Publish the odom→base_link TF directly. This replaces the
+           manual TF broadcast that udp_bridge_node does on the real robot. -->
+      <tf_topic>/tf</tf_topic>
+    </plugin>
+
+    <!-- JOINT STATE PUBLISHER PLUGIN
+         Publishes /joint_states showing wheel rotation angles. The
+         robot_state_publisher node consumes this to compute the TF
+         transforms for base_link→wheel_left_link and base_link→wheel_right_link. -->
+    <plugin filename="gz-sim-joint-state-publisher-system"
+            name="gz::sim::systems::JointStatePublisher">
+      <topic>joint_states</topic>
+      <joint_name>wheel_left_joint</joint_name>
+      <joint_name>wheel_right_joint</joint_name>
+    </plugin>
+
+  </gazebo>
+
+
+  <!-- LIDAR SENSOR — attached to the laser_frame link.
+       The <gazebo reference="X"> syntax applies properties to a specific
+       link, in this case to make it host a sensor. -->
+  <gazebo reference="laser_frame">
+    <sensor name="rplidar_sensor" type="gpu_lidar">
+      <!-- Pose is relative to laser_frame; zero because the frame itself
+           is already positioned correctly by the URDF joint. -->
+      <pose>0 0 0 0 0 0</pose>
+
+      <!-- Topic the scan is published on (before bridging) -->
+      <topic>scan</topic>
+
+      <!-- 10 Hz matches your real RPLIDAR A1M8 -->
+      <update_rate>10</update_rate>
+
+      <!-- Frame ID the LaserScan message will carry. Must match the
+           URDF link name so TF lookups work in RViz and Nav2. -->
+      <gz_frame_id>laser_frame</gz_frame_id>
+
+      <ray>
+        <scan>
+          <horizontal>
+            <!-- 360 samples over a full 2π revolution = 1° per sample,
+                 roughly matching the A1M8's default resolution. -->
+            <samples>360</samples>
+            <resolution>1</resolution>
+            <min_angle>-3.14159</min_angle>
+            <max_angle> 3.14159</max_angle>
+          </horizontal>
+        </scan>
+        <range>
+          <!-- Matches the A1M8's specified range -->
+          <min>0.15</min>
+          <max>12.0</max>
+          <resolution>0.01</resolution>
+        </range>
+        <!-- No noise for now. Once everything works, you can add a
+             Gaussian noise block here to make the sim more realistic. -->
+      </ray>
+
+      <always_on>1</always_on>
+
+      <!-- Visualize the scan rays in the Gazebo GUI while testing.
+           Turn this off for performance once you trust the sensor works. -->
+      <visualize>true</visualize>
+    </sensor>
+  </gazebo>
+
+
+  <!-- CASTER FRICTION OVERRIDE
+       The default surface friction in Gazebo is too high for a caster.
+       With default mu, the caster grips the floor and the robot can't
+       turn smoothly — it either oscillates or refuses to rotate.
+       We set mu1 and mu2 (friction coefficients in two directions) to
+       near-zero so the caster slides freely, matching how a real
+       ball-caster behaves. -->
+  <gazebo reference="caster_link">
+    <mu1>0.001</mu1>
+    <mu2>0.001</mu2>
+    <kp>1000000.0</kp>   <!-- stiffness: resist penetration -->
+    <kd>1.0</kd>         <!-- damping: absorb impact energy -->
+  </gazebo>
+
+
+  <!-- WHEEL FRICTION
+       The driven wheels need good grip or they'll slip under acceleration.
+       mu1 is the primary friction direction (forward); mu2 is perpendicular
+       (lateral). Values around 1.0 give normal rubber-on-floor behavior. -->
+  <gazebo reference="wheel_left_link">
+    <mu1>1.0</mu1>
+    <mu2>1.0</mu2>
+    <kp>1000000.0</kp>
+    <kd>1.0</kd>
+  </gazebo>
+
+  <gazebo reference="wheel_right_link">
+    <mu1>1.0</mu1>
+    <mu2>1.0</mu2>
+    <kp>1000000.0</kp>
+    <kd>1.0</kd>
+  </gazebo>
+
+
+  <!-- Material declarations for Gazebo's renderer. These make the robot
+       visible with the right colors in the Gazebo GUI. RViz uses the
+       materials declared inside <visual> blocks above. -->
+  <gazebo reference="base_link">
+    <material>Gazebo/Blue</material>
+  </gazebo>
+
+  <gazebo reference="wheel_left_link">
+    <material>Gazebo/Black</material>
+  </gazebo>
+
+  <gazebo reference="wheel_right_link">
+    <material>Gazebo/Black</material>
+  </gazebo>
+
+  <gazebo reference="laser_frame">
+    <material>Gazebo/Red</material>
+  </gazebo>
+
+</robot>

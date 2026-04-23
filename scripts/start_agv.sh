@@ -11,7 +11,7 @@
 #   3. Double-click or run: ./start_agv.sh
 # ============================================
 
-ESP32_IP="192.168.100.25"
+ESP32_IP="192.168.4.1"
 MAP_FILE="$HOME/ros2_ws/maps/my_map.yaml"
 
 # ─── Source ROS 2 ───
